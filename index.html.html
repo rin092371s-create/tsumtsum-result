@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08a1d1">
+<title>ツムツム リザルト記録</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef8fc;color:#17313d;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
+header{background:#08a1d1;color:white;padding:calc(14px + env(safe-area-inset-top)) 18px 16px;position:sticky;top:0;z-index:2}
+h1{font-size:20px;margin:0 0 3px}.sub{font-size:12px;opacity:.9}main{max-width:620px;margin:auto;padding:16px}
+.card{background:white;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 3px 14px #00000010}
+input[type=file]{display:none}.pick{display:block;text-align:center;padding:17px;border-radius:14px;background:#ffb400;color:#332100;font-weight:700;font-size:17px}
+button{border:0;border-radius:12px;padding:12px 15px;font-size:15px;font-weight:700;background:#0b9bc9;color:white}.secondary{background:#e7f3f7;color:#176277}
+.row{display:flex;gap:9px;flex-wrap:wrap}.row>*{flex:1}.preview{width:100%;max-height:420px;object-fit:contain;border-radius:12px;background:#dcecf2;margin-top:12px}
+.status{font-size:13px;color:#58727c;margin-top:10px;min-height:20px}.results{display:grid;grid-template-columns:1fr 1fr;gap:10px}.result{background:#f2f9fb;border-radius:14px;padding:14px}
+.label{font-size:12px;color:#62818b}.value{font-size:25px;font-weight:800;margin-top:3px}.edit{width:100%;border:1px solid #c9dfe6;border-radius:10px;padding:7px;background:#fff;color:#17313d;font-family:inherit}.edit:focus{outline:2px solid #08a1d1;border-color:transparent}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 5px;border-bottom:1px solid #e3eef1;text-align:right}th:first-child,td:first-child{text-align:left}
+.empty{text-align:center;color:#78919a;padding:18px}.small{font-size:11px;color:#718890;line-height:1.6}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.summary-box{background:#f2f9fb;border-radius:14px;padding:14px;text-align:center}.summary-label{font-size:12px;color:#62818b}.summary-value{font-size:29px;font-weight:800;margin-top:4px}
+.batch-item{border:1px solid #d9e8ed;border-radius:14px;padding:13px;margin:10px 0;background:#fbfeff}.batch-name{font-size:12px;color:#58727c;word-break:break-all;margin-bottom:8px}.batch-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.batch-grid label{font-size:12px;color:#62818b}.batch-grid input{width:100%;font-size:19px;padding:9px;border:1px solid #c9dfe6;border-radius:10px;margin-top:4px}
+.graph{height:280px;position:relative}.hidden{display:none}
+</style></head>
+<body>
+<header><h1>ツムツム リザルト記録</h1><div class="sub">スクショ → スコア・コインを自動認識</div></header>
+<main>
+<section class="card">
+<label class="pick" for="files">📷 リザルトのスクショを選択</label>
+<input id="files" type="file" accept="image/*" multiple>
+<div id="status" class="status"></div>
+<img id="preview" class="preview" hidden>
+</section>
+
+<section id="singleCard" class="card">
+<div class="results">
+<div class="result"><div class="label">スコア（修正できます）</div><input id="score" class="value edit" inputmode="numeric" type="text" placeholder="—"></div>
+<div class="result"><div class="label">コイン（修正できます）</div><input id="coins" class="value edit" inputmode="numeric" type="text" placeholder="—"></div>
+</div>
+<div class="row" style="margin-top:12px"><button id="save" disabled>この結果を記録</button><button id="clear" class="secondary">全記録を削除</button></div>
+<p class="small">1枚だけ選んだ場合は今まで通りです。複数枚選ぶと一括OCR画面になります。</p>
+</section>
+
+<section id="batchCard" class="card hidden">
+<h2 style="font-size:17px;margin:0 0 5px">📸 一括記録</h2>
+<div class="small">OCR結果を確認して、必要なら数字を修正してください。</div>
+<div id="batchList"></div>
+<button id="batchSave" style="width:100%;margin-top:8px">まとめて記録</button>
+</section>
+
+<section class="card">
+<h2 style="font-size:17px;margin:0 0 12px">📊 集計</h2>
+<div class="summary-grid">
+<div class="summary-box"><div class="summary-label">プレイ回数</div><div id="sumPlays" class="summary-value">0回</div></div>
+<div class="summary-box"><div class="summary-label">累計コイン</div><div id="sumCoins" class="summary-value">0</div></div>
+<div class="summary-box"><div class="summary-label">平均コイン</div><div id="sumAvg" class="summary-value">0</div></div>
+<div class="summary-box"><div class="summary-label">最高スコア</div><div id="sumMax" class="summary-value">0</div></div>
+</div>
+</section>
+
+<section id="graphCard" class="card hidden">
+<h2 style="font-size:17px;margin:0 0 8px">📈 コイン推移</h2>
+<div class="graph"><canvas id="coinChart"></canvas></div>
+</section>
+
+<section class="card"><h2 style="font-size:17px;margin:0 0 8px">記録</h2><div id="history" class="empty">まだ記録がありません</div></section>
+</main>
+
+<script>
+const SCORE_ROI=[.08,.335,.93,.418], COIN_ROI=[.44,.505,.78,.585];
+let current={score:null,coins:null,file:null}, chart=null;
+const $=id=>document.getElementById(id);
+
+function crop(img,roi,scale=3){
+ const c=document.createElement('canvas');
+ c.width=Math.round(img.naturalWidth*(roi[2]-roi[0])*scale);
+ c.height=Math.round(img.naturalHeight*(roi[3]-roi[1])*scale);
+ c.getContext('2d').drawImage(img,img.naturalWidth*roi[0],img.naturalHeight*roi[1],
+ img.naturalWidth*(roi[2]-roi[0]),img.naturalHeight*(roi[3]-roi[1]),0,0,c.width,c.height);
+ return c;
+}
+function parse(t){
+ let a=(t.match(/\d[\d,]*/g)||[]).map(s=>({d:s.replace(/\D/g,''),c:/^\d{1,3}(,\d{3})+$/.test(s)}))
+ .filter(x=>x.d.length>=2);
+ a.sort((x,y)=>(y.c-x.c)||(y.d.length-x.d.length));
+ return a[0]?Number(a[0].d):null;
+}
+async function ocr(c,label){
+ let r=await Tesseract.recognize(c,'eng',{logger:m=>{
+  if(m.status==='recognizing text')$('status').textContent=label+'を認識中… '+Math.round((m.progress||0)*100)+'%';
+ }});
+ return parse(r.data.text);
+}
+function fmt(n){return n==null?'—':Number(n).toLocaleString('ja-JP')}
+function rows(){return JSON.parse(localStorage.getItem('tsumRows')||'[]')}
+function cleanNum(v){return Number(String(v||'').replace(/\D/g,''))||0}
+
+function render(){
+ let a=rows();
+ $('sumPlays').textContent=a.length.toLocaleString('ja-JP')+'回';
+ let tc=a.reduce((s,r)=>s+Number(r.coins||0),0);
+ $('sumCoins').textContent=fmt(tc);
+ $('sumAvg').textContent=fmt(a.length?Math.round(tc/a.length):0);
+ $('sumMax').textContent=fmt(a.length?Math.max(...a.map(r=>Number(r.score||0))):0);
+
+ if(!a.length){
+  $('history').innerHTML='<div class="empty">まだ記録がありません</div>';
+  $('graphCard').classList.add('hidden');
+  return;
+ }
+ $('history').innerHTML='<table><thead><tr><th>日時</th><th>スコア</th><th>コイン</th></tr></thead><tbody>'+
+ a.slice().reverse().map(r=>`<tr><td>${new Date(r.time).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td><td>${fmt(r.score)}</td><td>${fmt(r.coins)}</td></tr>`).join('')+
+ '</tbody></table>';
+ $('graphCard').classList.remove('hidden');
+ if(chart)chart.destroy();
+ chart=new Chart($('coinChart'),{
+  type:'line',
+  data:{labels:a.map((_,i)=>String(i+1)),datasets:[{label:'獲得コイン',data:a.map(r=>Number(r.coins||0)),tension:.25}]},
+  options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'プレイ'}},y:{beginAtZero:true,title:{display:true,text:'コイン'}}},plugins:{legend:{display:false}}}
+ });
+}
+
+$('files').addEventListener('change', async e=>{
+ const files=Array.from(e.target.files||[]);
+ if(!files.length)return;
+
+ $('save').disabled=true;
+ $('batchCard').classList.toggle('hidden',files.length<=1);
+ $('singleCard').classList.toggle('hidden',files.length!==1);
+
+ if(files.length===1){
+  const f=files[0];
+  current={score:null,coins:null,file:f};
+  $('score').value=''; $('coins').value='';
+  const u=URL.createObjectURL(f),img=new Image();
+  img.onload=async()=>{
+   $('preview').src=u;$('preview').hidden=false;
+   try{
+    $('status').textContent='OCRエンジンを準備中…';
+    current.score=await ocr(crop(img,SCORE_ROI),'スコア');
+    current.coins=await ocr(crop(img,COIN_ROI),'コイン');
+    $('score').value=current.score??'';
+    $('coins').value=current.coins??'';
+    $('save').disabled=false;
+    $('status').textContent='認識完了。内容を確認して記録してください。';
+   }catch(err){
+    console.error(err);
+    $('status').textContent='OCRに失敗しました。数字を手入力して記録できます。';
+    $('save').disabled=false;
+   }finally{URL.revokeObjectURL(u);}
+  };
+  img.onerror=()=>{$('status').textContent='画像を読み込めませんでした。';$('save').disabled=false;URL.revokeObjectURL(u)};
+  img.src=u;
+  return;
+ }
+
+ // 複数枚：先に一覧と「まとめて記録」を表示してからOCR開始
+ $('status').textContent=files.length+'枚を選択しました。下に結果を表示します。';
+ const list=$('batchList');
+ list.innerHTML='';
+ files.forEach((f,i)=>{
+  const item=document.createElement('div');
+  item.className='batch-item';
+  item.dataset.index=i;
+  item.innerHTML=`<div class="batch-name">${i+1}. ${f.name}</div>
+  <div class="batch-grid">
+   <label>スコア<input class="bscore edit" inputmode="numeric" type="text" placeholder="OCR待ち…"></label>
+   <label>コイン<input class="bcoins edit" inputmode="numeric" type="text" placeholder="OCR待ち…"></label>
+  </div>`;
+  list.appendChild(item);
+ });
+ // OCRは順番に実行。失敗しても他の画像へ進む
+ for(let i=0;i<files.length;i++){
+  const f=files[i], item=list.querySelector(`.batch-item[data-index="${i}"]`);
+  try{
+   $('status').textContent=`${i+1}/${files.length}枚目をOCR中…`;
+   const u=URL.createObjectURL(f),img=new Image();
+   await new Promise((resolve,reject)=>{
+    img.onload=resolve; img.onerror=reject; img.src=u;
+   });
+   const sc=await ocr(crop(img,SCORE_ROI),`スコア ${i+1}/${files.length}`);
+   const co=await ocr(crop(img,COIN_ROI),`コイン ${i+1}/${files.length}`);
+   item.querySelector('.bscore').value=sc??'';
+   item.querySelector('.bcoins').value=co??'';
+   URL.revokeObjectURL(u);
+  }catch(err){
+   console.error('OCR error',i,err);
+   item.querySelector('.bscore').placeholder='手入力';
+   item.querySelector('.bcoins').placeholder='手入力';
+  }
+ }
+ $('status').textContent='一括OCR完了。数字を確認して「まとめて記録」を押してください。';
+});
+
+$('save').onclick=()=>{
+ let score=cleanNum($('score').value),coins=cleanNum($('coins').value);
+ if(!score||!coins){$('status').textContent='スコアとコインを入力してください。';return}
+ let a=rows();a.push({time:new Date().toISOString(),score,coins});
+ localStorage.setItem('tsumRows',JSON.stringify(a));render();$('status').textContent='記録しました。';
+};
+
+$('batchSave').onclick=()=>{
+ const items=[...document.querySelectorAll('.batch-item')];
+ let a=rows(),added=0;
+ for(const item of items){
+  const score=cleanNum(item.querySelector('.bscore').value),coins=cleanNum(item.querySelector('.bcoins').value);
+  if(score&&coins){a.push({time:new Date().toISOString(),score,coins});added++}
+ }
+ if(!added){$('status').textContent='保存できる結果がありません。';return}
+ localStorage.setItem('tsumRows',JSON.stringify(a));render();
+ $('status').textContent=added+'件をまとめて記録しました！';
+ window.scrollTo({top:0,behavior:'smooth'});
+};
+
+$('clear').onclick=()=>{
+ if(confirm('すべての記録を削除しますか？')){localStorage.removeItem('tsumRows');render();$('status').textContent='全記録を削除しました。'}
+};
+render();
+</script>
+</body></html>
